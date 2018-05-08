@@ -1,0 +1,276 @@
+#%RAML 1.0
+title: sGreen 2.0
+version: v1
+mediaType: application/json
+types:
+  SupportedSensors:
+    type: string
+    enum: ["soil", "temp", "humid", "batt", "fanspeed"]
+  RangeConfig:
+    type: object
+    properties:
+      min:
+        required: true
+        type: integer
+      max:
+        required: true
+        type: integer
+  RangeConfigTime:
+    type: object
+    properties:
+      start_time:
+        required: true
+        type: time-only
+      end_time:
+        required: true
+        type: time-only
+  Settings:
+    type: object
+    properties:
+      is_manual_mode:
+        required: true
+        type: boolean
+      temperature:
+        description: temperature in degrees Fahrenheit
+        required: true
+        type: RangeConfig
+      soil_moisture:
+        description: soil moisture in percent water volume
+        required: true
+        type: RangeConfig
+      lights:
+        description: time frame that the lights should be on
+        required: true
+        type: RangeConfigTime
+      watering_times:
+        description: times when plants will be watered if they need to be watered
+        required: true
+        type: time-only[]
+      error_flush_times:
+        description: times when any pending errors should be sent out as a notification
+        required: true
+        type: time-only[]
+      email_addresses:
+        required: true
+        type: string[]
+  Sensor:
+    type: object
+    properties:
+      type:
+        required: true
+        type: SupportedSensors
+      name:
+        required: true
+        type: string
+  DataReading:
+    type: object
+    properties:
+      sensor:
+        required: true
+        type: Sensor
+      timestamp:
+        description: the number of milliseconds since the Unix epoch
+        required: true
+        type: integer
+      reading:
+        description: >
+          The value of the data reading for the given type.
+          Units are temperature: Fahrenheit, humidity: %, soil moisture: % water volume, fan speed: rpm
+        required: true
+        type: number
+      health:
+        description: the health of the sensor if it has one
+        required: false
+        type: string
+        enum: ["good", "low", "critical"]
+  DataReadingPost:
+    type: object
+    properties:
+      sensor:
+        required: true
+        type: Sensor
+      reading:
+        description: >
+          The value of the data reading for the given type.
+          Default units are temperature: Fahrenheit, humidity: %, soil moisture: % water volume, fan speed: rpm
+        required: true
+        type: number
+      unit:
+        description: The unit of the value given for the reading. Readings that are not relevant to the sensor type will become the default for that type
+        required: false
+        type: string
+        enum: ["temp_c", "temp_f", "soil_raw", "soil_percent", "humid_percent", "batt_volts", "fanspeed_rpm"]
+  Actuator:
+    type: object
+    properties:
+      name:
+        required: true
+        type: string
+      state:
+        description: the state of the actuator is true if it is on and false otherwise
+        required: true
+        type: boolean
+      type:
+        required: true
+        type: string
+  ActuatorStateLogEntry:
+    type: object
+    properties:
+      name:
+        description: the name of the actuator
+        required: true
+        type: string
+      to_state:
+        description: the state to which the actuator was switched
+        required: true
+        type: boolean
+      timestamp:
+        description: the number of milliseconds since the Unix epoch
+        required: true
+        type: integer
+  GreenhouseServerState:
+    type: object
+    properties:
+      timestamp:
+        description: the number of milliseconds since the Unix epoch
+        required: true
+        type: integer
+      state:
+        description: always true
+        required: true
+        type: boolean
+
+/actuators:
+  displayName: Actuators
+  get:
+    description: Gets actuators sorted by type then by name
+    responses:
+      200:
+        body:
+          application/json:
+            type: Actuator[]
+  /{name}/state:
+    uriParameters:
+      name:
+        description: the name of the actuator
+    get:
+      description: Gets the actuator state log (history of turning on and off the actuator)
+      queryParameters:
+        start_time:
+          description: the earliest timestamp to retrieve of the data readings (default to 10 minutes)
+          type: integer
+          required: false
+        end_time:
+          description: the latest timestamp to retrieve of the data readings (default to current time)
+          type: integer
+          required: false
+      responses:
+        200:
+          body:
+            application/json:
+              type: ActuatorStateLogEntry[]
+        400:
+          body:
+            application/json:
+              example:
+                message: start_time and end_time must be integers
+        404:
+          body:
+            application/json:
+              example:
+                message: actuator 'thisisnotanactuator' not found
+    put:
+      description: Sets the actuator state to true. Note that you will need to set `Content-Length` to zero
+      responses:
+        204:
+        404:
+          body:
+            application/json:
+              example:
+                message: actuator 'thisisnotanactuator' not found
+    delete:
+      description: Sets the actuator state to false
+      responses:
+        204:
+        404:
+          body:
+            application/json:
+              example:
+                message: actuator 'thisisnotanactuator' not found
+
+/data_readings:
+  displayName: Data Readings
+  get:
+    description: Gets data readings of the specified type sorted by sensor name ascending then by timestamp descending
+    queryParameters:
+      type:
+        description: the type of data reading
+        type: SupportedSensors
+      start_time:
+        description: the earliest timestamp to retrieve of the data readings (default to 10 minutes ago)
+        type: integer
+        required: false
+      end_time:
+        description: the latest timestamp to retrieve of the data readings (default to current time)
+        type: integer
+        required: false
+    responses:
+      200:
+        body:
+          application/json:
+            type: DataReading[]
+      400:
+        body:
+          application/json:
+            example:
+                message: start_time and end_time must be integers
+  post:
+    description: Adds a data reading of the specified type
+    body:
+      application/json:
+        type: DataReadingPost
+    responses:
+      201:
+      400:
+        body:
+          application/json:
+            example:
+              message: type cannot be null
+
+/greenhouse_server_state:
+  displayName: Greenhouse Server State
+  get:
+    description: Gets the server states
+    queryParameters:
+      start_time:
+        description: the earliest timestamp to retrieve of the server states (default to 10 minutes ago)
+        type: integer
+        required: false
+      end_time:
+        description: the latest timestamp to retrieve of the server states (default to current time)
+        type: integer
+        required: false
+    responses:
+      200:
+        body:
+          application/json:
+            type: GreenhouseServerState
+  post:
+    description: The greenhouse server is up
+    responses:
+      201:
+
+/settings:
+  displayName: Settings
+  get:
+    description: Gets the settings
+    responses:
+      200:
+        body:
+          application/json:
+            type: Settings
+  post:
+    description: Updates the settings if they exist and creates them if they do not
+    body:
+      application/json:
+        type: Settings

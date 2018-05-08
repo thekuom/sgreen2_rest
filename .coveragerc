@@ -1,0 +1,3 @@
+[run]
+source = sgreen2_web
+omit = sgreen2_web/test*
